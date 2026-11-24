@@ -1,0 +1,102 @@
+// Getto — eğitim platformu veritabanı şeması
+// SQLite kullanılıyor: tamamen ücretsiz, dosya tabanlı, Vercel dışına kolayca taşınabilir.
+// Prodüksiyonda ücretsiz bir Postgres (Neon / Supabase free tier) katmanına geçmek için
+// sadece "provider" ve "url" alanlarını değiştirmek yeterli — şema aynı kalır.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String
+  displayName   String?
+  role          Role      @default(STUDENT)
+  createdAt     DateTime  @default(now())
+
+  submissions   Submission[]
+  sessions      LabSession[]
+
+  totalPoints   Int       @default(0)
+}
+
+enum Role {
+  STUDENT
+  MENTOR
+  ADMIN
+}
+
+model LabCategory {
+  id          String @id @default(cuid())
+  slug        String @unique
+  name        String
+  description String
+  icon        String // FontAwesome icon name, e.g. "shield-halved"
+  labs        Lab[]
+}
+
+model Lab {
+  id            String       @id @default(cuid())
+  slug         String       @unique
+  title        String
+  summary      String
+  briefing     String       // markdown gövde: senaryo anlatımı
+  difficulty   Difficulty
+  points       Int
+  categoryId   String
+  category     LabCategory  @relation(fields: [categoryId], references: [id])
+  toolTags     String       // virgülle ayrılmış: "nmap,burp,hydra" vb. (eğitim amaçlı simüle araç setleri)
+  flag         String       // beklenen doğrulama değeri (hash'lenmiş saklanmalı — bkz. lib/labs.ts)
+  isolationNote String      // lab-runner tarafında hangi izole imajın kullanılacağının notu
+  createdAt    DateTime     @default(now())
+
+  submissions  Submission[]
+  sessions     LabSession[]
+}
+
+enum Difficulty {
+  TEMEL
+  ORTA
+  ILERI
+  UZMAN
+}
+
+// Bir kullanıcının bir lab için başlattığı izole oturum.
+// Gerçek izole çalıştırma (Docker konteyneri) lab-runner servisinde gerçekleşir;
+// burada sadece oturumun durumu ve zaman damgaları loglanır — eğitimsel takip için.
+model LabSession {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  labId       String
+  lab         Lab      @relation(fields: [labId], references: [id])
+  status      SessionStatus @default(PROVISIONING)
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+  runnerNote  String?  // lab-runner servisinden dönen durum/özet bilgisi
+}
+
+enum SessionStatus {
+  PROVISIONING
+  RUNNING
+  COMPLETED
+  EXPIRED
+  FAILED
+}
+
+model Submission {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  labId     String
+  lab       Lab      @relation(fields: [labId], references: [id])
+  correct   Boolean
+  createdAt DateTime @default(now())
+}
